@@ -48,6 +48,47 @@ data Asm = LBoe      String String
 
 data Tag a = Tag String a
 
+expr :: Expr
+expr = EBind "main" [] (
+    TLet [ EBind "fact" ["n"] $ TIf (TAInst Eq (TLabel "n") (TInt 0))
+                                    (TInt 1)
+                                    (TInt 5)
+         ] $ TCall "fact" [TInt 5])
+
+fromExpr :: Expr -> IO (Block [IR])
+fromExpr (EBind name args term) =
+    Block name args <$> runKnorm term
+
+runKnorm :: Term -> IO [IR]
+runKnorm term = do 
+    a <- execWriterT . knorm . Tag "_return" $ term
+    return $ reverse a
+
+knorm :: Tag Term -> WriterT [IR] IO ()
+knorm (Tag name originalTerm) = do
+    let uuid   = "a"
+    let uuid'  = "b"
+    let uuids  = repeat "d"
+    case originalTerm of
+        TInt   int              -> tell [IInt name int]
+        TAInst op term term'    -> tell [IAInst op name uuid uuid'] 
+                                >> knorm (Tag uuid term)
+                                >> knorm (Tag uuid' term')
+        TIf    cond then' else' -> do
+            tcond <- lift $ runKnorm cond
+            tthen <- lift $ runKnorm then'
+            telse <- lift $ runKnorm else'
+            tell [IIf tcond tthen telse]
+        TCall  label args       -> do
+            let uuids' = take (length args) uuids
+            tell [ICall label uuids']
+            mapM_ knorm $ zipWith Tag uuids' args
+        TLabel label            -> tell [ILabel name label]
+        TLet   exprs term       -> do
+            blocks <- lift $ mapM fromExpr exprs
+            irs    <- lift $ runKnorm term
+            tell [ILet blocks irs]
+
 main :: IO ()
 main = print =<< fromExpr expr
 
