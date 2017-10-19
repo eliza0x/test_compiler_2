@@ -57,11 +57,11 @@ expr = EBind "main" [] (
 
 fromExpr :: Expr -> IO (Block [IR])
 fromExpr (EBind name args term) =
-    Block name args <$> runKnorm term
+    Block name args <$> runKnorm (Tag "_return" term)
 
-runKnorm :: Term -> IO [IR]
+runKnorm :: Tag Term -> IO [IR]
 runKnorm term = do 
-    a <- execWriterT . knorm . Tag "_return" $ term
+    a <- execWriterT . knorm $ term
     return $ reverse a
 
 knorm :: Tag Term -> WriterT [IR] IO ()
@@ -75,9 +75,9 @@ knorm (Tag name originalTerm) = do
                                 >> knorm (Tag uuid term)
                                 >> knorm (Tag uuid' term')
         TIf    cond then' else' -> do
-            tcond <- lift $ runKnorm cond
-            tthen <- lift $ runKnorm then'
-            telse <- lift $ runKnorm else'
+            tcond <- lift $ runKnorm (Tag "_return" cond)
+            tthen <- lift $ runKnorm (Tag name then')
+            telse <- lift $ runKnorm (Tag name else')
             tell [IIf tcond tthen telse]
         TCall  label args       -> do
             let uuids' = take (length args) uuids
@@ -86,7 +86,7 @@ knorm (Tag name originalTerm) = do
         TLabel label            -> tell [ILabel name label]
         TLet   exprs term       -> do
             blocks <- lift $ mapM fromExpr exprs
-            irs    <- lift $ runKnorm term
+            irs    <- lift $ runKnorm (Tag "_return" term)
             tell [ILet blocks irs]
 
 main :: IO ()
