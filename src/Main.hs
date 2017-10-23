@@ -1,6 +1,6 @@
 module Main where
 
-import Data.List
+-- import Data.List
 import Control.Monad.Writer.Strict
 
 -- オペレータ
@@ -30,9 +30,11 @@ data IR = ILet   [Block [IR]] [IR]
         | IIf    [IR] [IR] [IR]
         | ICall  String [String]
         | IAInst Op String String String
-        | IBind  IR Int
         | ILabel String String
         | IInt   String Int
+        | IBlock String [IR]
+        | ILoad  String Int
+        | IStore String Int
         deriving (Eq, Show)
 
 -- Assembry
@@ -49,7 +51,7 @@ data Asm = LBoe      String String
 data Tag a = Tag String a
 
 expr :: Expr
-expr = EBind "main" [] (
+expr = EBind "main" ["envs"] (
     TLet [ EBind "fact" ["n"] $ TIf (TAInst Eq (TLabel "n") (TInt 0))
                                     (TInt 1)
                                     (TInt 5)
@@ -58,36 +60,36 @@ expr = EBind "main" [] (
 fromExpr :: Expr -> IO (Block [IR])
 fromExpr (EBind name args term) =
     Block name args <$> runKnorm (Tag "_return" term)
-
-runKnorm :: Tag Term -> IO [IR]
-runKnorm term = do 
-    a <- execWriterT . knorm $ term
-    return $ reverse a
-
-knorm :: Tag Term -> WriterT [IR] IO ()
-knorm (Tag name originalTerm) = do
-    let uuid   = "a"
-    let uuid'  = "b"
-    let uuids  = repeat "d"
-    case originalTerm of
-        TInt   int              -> tell [IInt name int]
-        TAInst op term term'    -> tell [IAInst op name uuid uuid'] 
-                                >> knorm (Tag uuid term)
-                                >> knorm (Tag uuid' term')
-        TIf    cond then' else' -> do
-            tcond <- lift $ runKnorm (Tag "_return" cond)
-            tthen <- lift $ runKnorm (Tag name then')
-            telse <- lift $ runKnorm (Tag name else')
-            tell [IIf tcond tthen telse]
-        TCall  label args       -> do
-            let uuids' = take (length args) uuids
-            tell [ICall label uuids']
-            mapM_ knorm $ zipWith Tag uuids' args
-        TLabel label            -> tell [ILabel name label]
-        TLet   exprs term       -> do
-            blocks <- lift $ mapM fromExpr exprs
-            irs    <- lift $ runKnorm (Tag "_return" term)
-            tell [ILet blocks irs]
+    where
+    runKnorm :: Tag Term -> IO [IR]
+    runKnorm term = do 
+        a <- execWriterT . knorm $ term
+        return $ reverse a
+    
+    knorm :: Tag Term -> WriterT [IR] IO ()
+    knorm (Tag name originalTerm) = do
+        let uuid   = "a"
+        let uuid'  = "b"
+        let uuids  = repeat "d"
+        case originalTerm of
+            TInt   int              -> tell [IInt name int]
+            TAInst op term term'    -> tell [IAInst op name uuid uuid'] 
+                                    >> knorm (Tag uuid term)
+                                    >> knorm (Tag uuid' term')
+            TIf    cond then' else' -> do
+                tcond <- lift $ runKnorm (Tag "_return" cond)
+                tthen <- lift $ runKnorm (Tag name then')
+                telse <- lift $ runKnorm (Tag name else')
+                tell [IIf tcond tthen telse]
+            TCall  label args       -> do
+                let uuids' = take (length args) uuids
+                tell [ICall label uuids']
+                mapM_ knorm $ zipWith Tag uuids' args
+            TLabel label            -> tell [ILabel name label]
+            TLet   exprs term       -> do
+                blocks <- lift $ mapM fromExpr exprs
+                irs    <- lift $ runKnorm (Tag "_return" term)
+                tell [ILet blocks irs]
 
 main :: IO ()
 main = print =<< fromExpr expr

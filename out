@@ -1,0 +1,6 @@
+main := let 
+    fact(n) := if b := 0; a := n; a = b
+                    then 1
+                    else 5;;
+    in d = 5;
+       fact(d);;
